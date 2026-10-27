@@ -1,0 +1,8 @@
+# 文本统一 LF（Windows 上 clone 也不会产生整文件换行差异）
+* text=auto eol=lf
+
+# 二进制素材
+*.webp binary
+*.png binary
+*.jpg binary
+*.ico binary

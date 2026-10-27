@@ -1,0 +1,12 @@
+# dsh-lianggod-switcher bundle patch.
+#
+# `dsh plugin --profile web add <this directory>` appends the package to
+# dsh.profile.bundles and applies this insert row. The row is the loader entry
+# whose `dsh.client` metadata makes the web server serve index.js under
+# /plugins — without it the browser half is never discovered.
+#
+# If the profile's own cordis.patch.yml still carries a hand-written mount of
+# the same id, delete that one: two rows with id `lianggod-switcher` double-mount.
+- insert:
+    - id: lianggod-switcher
+      name: dsh-lianggod-switcher

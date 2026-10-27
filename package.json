@@ -1,0 +1,59 @@
+{
+  "name": "dsh-lianggod-switcher",
+  "version": "0.1.0",
+  "description": "梁神滑动变阻器：把 DSH 输入区的模型选择换成无极推理深度变阻器，换档时切换整页背景与人物。An infinite-slider reasoning-depth switcher for DeepSeek Harness with depth-driven background and portrait.",
+  "type": "module",
+  "main": "host.js",
+  "exports": {
+    ".": "./host.js",
+    "./client": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-model-selection",
+        "@deepseek-ai/dsh-client-ui-theme",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-plugins"
+      ]
+    }
+  },
+  "files": [
+    "host.js",
+    "index.js",
+    "cordis.patch.yml",
+    "assets/portrait/*.webp",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "check": "node --check index.js && node --check host.js",
+    "test": "node test/verify-client.cjs && node test/verify-host.cjs",
+    "preview": "node scripts/build-preview.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "reasoning",
+    "effort",
+    "slider",
+    "skin",
+    "theme",
+    "web-ui"
+  ],
+  "author": "12_168",
+  "license": "MIT",
+  "private": false
+}

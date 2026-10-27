@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>dsh-lianggod-switcher · 离线预览</title>
+<style>
+/* ── full-page backdrop ───────────────────────────────────────────────── */
+.dsh-lg-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+    background-color: var(--dsh-lg-canvas, transparent);
+    transition: opacity 320ms ease;
+}
+.dsh-lg-backdrop[data-on="1"] { opacity: 1; }
+/* Portrait-only mode: keep the native canvas colour and drop the gradient wash. */
+.dsh-lg-backdrop[data-plain="1"] .dsh-lg-aurora { display: none; }
+/* Safety net: when the theme service is unavailable the alias-token layer cannot
+   be applied, so punch the canvas open from CSS instead. With the service
+   present the token layer already sets this to transparent (higher precedence). */
+html[data-dsh-lianggod-background] body { background: transparent; }
+.dsh-lg-aurora {
+    position: absolute;
+    inset: -12%;
+    background-color: var(--dsh-lg-base, transparent);
+    background-image:
+        radial-gradient(66% 54% at var(--dsh-lg-p1, 18%) var(--dsh-lg-p2, 10%), var(--dsh-lg-g1, transparent) 0%, transparent 62%),
+        radial-gradient(64% 60% at var(--dsh-lg-p3, 82%) var(--dsh-lg-p4, 82%), var(--dsh-lg-g2, transparent) 0%, transparent 60%),
+        linear-gradient(158deg, var(--dsh-lg-g2, transparent) 0%, transparent 46%);
+}
+.dsh-lg-aurora::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(118% 96% at 50% 38%, transparent 52%, rgb(0 0 0 / 8%) 100%);
+}
+/* The character: one cover image per depth anchor, cross-faded on change. It is
+   masked on its left edge so it never fights the conversation column, and its
+   presence (width + opacity) grows with the depth. */
+.dsh-lg-portrait {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: var(--dsh-lg-portrait-width, 44vw);
+    max-width: 780px;
+    pointer-events: none;
+    opacity: var(--dsh-lg-portrait-opacity, 0.5);
+    transition: opacity 420ms ease, width 420ms ease;
+}
+.dsh-lg-portrait img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 30%;
+    opacity: 0;
+    transition: opacity 240ms ease-out;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 22%) 14%, #000 38%, #000 100%);
+    mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 22%) 14%, #000 38%, #000 100%);
+}
+.dsh-lg-portrait img[data-active="1"] { opacity: 1; }
+/* The frame being replaced keeps fading while the incoming one fades in, so the
+   two transitions overlap instead of playing back to back. */
+.dsh-lg-portrait img[data-leaving="1"] { transition: opacity 380ms ease-in-out; }
+.dsh-lg-portrait[data-on="0"] { display: none; }
+.dsh-lg-flare {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    background: radial-gradient(circle at var(--dsh-lg-fx, 50%) var(--dsh-lg-fy, 78%), var(--dsh-lg-flare, transparent) 0%, transparent 56%);
+}
+.dsh-lg-flare[data-fire="1"] { animation: dsh-lg-flare 720ms ease-out; }
+.dsh-lg-mark {
+    position: absolute;
+    left: clamp(16px, 3vw, 44px);
+    bottom: clamp(12px, 2.4vh, 32px);
+    color: var(--dsh-lg-accent, currentColor);
+    opacity: .1;
+    font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+    font-size: clamp(26px, 4vw, 60px);
+    font-weight: 700;
+    letter-spacing: .12em;
+    user-select: none;
+    transition: opacity 320ms ease;
+}
+@keyframes dsh-lg-flare {
+    0% { opacity: 0; transform: scale(.86); }
+    18% { opacity: .9; }
+    100% { opacity: 0; transform: scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .dsh-lg-backdrop, .dsh-lg-mark, .dsh-lg-fill, .dsh-lg-knob, .dsh-lg-rank,
+    .dsh-lg-portrait, .dsh-lg-portrait img { transition: none; }
+    .dsh-lg-flare[data-fire="1"] { animation: none; }
+}
+
+/* ── seat trigger ─────────────────────────────────────────────────────── */
+.dsh-lg-root {
+    position: relative;
+    display: inline-flex;
+    min-width: 0;
+}
+.dsh-lg-trigger {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    max-width: min(340px, 44cqw);
+    height: 28px;
+    padding: 0 5px 0 7px;
+    border: none;
+    border-radius: var(--dsw-radius-sm, 24px);
+    background: 0 0;
+    color: var(--dsw-alias-label-secondary);
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 20px;
+    cursor: pointer;
+    outline: none;
+}
+.dsh-lg-trigger:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.dsh-lg-trigger:focus-visible { box-shadow: 0 0 0 2px var(--dsw-alias-border-l3); }
+.dsh-lg-trigger:disabled { color: var(--dsw-alias-label-dimmed); cursor: default; }
+.dsh-lg-glyph {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--dsh-lg-accent, var(--dsw-alias-label-caption));
+    transition: color 320ms ease;
+}
+.dsh-lg-label {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.dsh-lg-rank {
+    flex: none;
+    padding: 0 5px;
+    border-radius: 5px;
+    background: var(--dsh-lg-accent-soft, var(--dsw-alias-interactive-bg-hover));
+    color: var(--dsh-lg-accent, var(--dsw-alias-label-secondary));
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 600;
+    transition: background 320ms ease, color 320ms ease;
+}
+.dsh-lg-chevron { flex: none; color: var(--dsw-alias-label-caption); transition: transform .12s; }
+.dsh-lg-chevron[data-open="1"] { transform: rotate(180deg); }
+
+/* ── panel ────────────────────────────────────────────────────────────── */
+.dsh-lg-panel {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    width: min(272px, calc(100vw - 32px));
+    max-height: min(440px, calc(100vh - 96px));
+    padding: 5px;
+    overflow: hidden;
+    border: 1px solid var(--dsw-alias-border-inverted);
+    border-radius: var(--dsw-radius-lg, 10px);
+    background: linear-gradient(var(--dsw-specific-menu), var(--dsw-specific-menu)), var(--dsh-lg-panel, var(--dsw-alias-bg-base, #fff));
+    box-shadow: var(--dsw-shadow-lv3);
+    color: var(--dsw-alias-label-primary);
+    animation: dsh-lg-pop .12s ease-out;
+}
+@keyframes dsh-lg-pop {
+    from { opacity: 0; transform: translateY(6px) scale(.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.dsh-lg-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 6px;
+    border: none;
+    border-radius: var(--dsw-radius-sm, 6px);
+    background: 0 0;
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    line-height: 18px;
+    text-align: left;
+    cursor: pointer;
+}
+.dsh-lg-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dsh-lg-rowKey { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.dsh-lg-rowValue {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--dsw-alias-label-primary);
+    font-weight: 500;
+}
+.dsh-lg-divider { height: 1px; margin: 5px 0; background: var(--dsw-alias-border-l1); flex: none; }
+.dsh-lg-models {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 4px 2px 0;
+    max-height: min(216px, 40vh);
+    overflow-y: auto;
+    border-radius: var(--dsw-radius-sm, 6px);
+    scrollbar-width: thin;
+}
+.dsh-lg-group {
+    padding: 6px 8px 2px;
+    color: var(--dsw-alias-label-tertiary);
+    font-size: 10px;
+    line-height: 14px;
+}
+.dsh-lg-model {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 6px;
+    border: none;
+    border-radius: var(--dsw-radius-sm, 6px);
+    background: 0 0;
+    color: var(--dsw-alias-label-secondary);
+    font: inherit;
+    font-size: 12px;
+    line-height: 18px;
+    text-align: left;
+    cursor: pointer;
+}
+.dsh-lg-model:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dsh-lg-model[data-active="1"] { color: var(--dsw-alias-state-info-primary); }
+.dsh-lg-model[data-blocked="1"] { color: var(--dsw-alias-label-tertiary); cursor: not-allowed; }
+.dsh-lg-modelName {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.dsh-lg-modelDesc {
+    flex-shrink: 1000;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--dsw-alias-label-caption);
+    font-size: 11px;
+}
+.dsh-lg-status, .dsh-lg-empty {
+    padding: 8px;
+    color: var(--dsw-alias-label-tertiary);
+    font-size: 12px;
+    line-height: 18px;
+}
+
+/* ── rheostat ─────────────────────────────────────────────────────────── */
+.dsh-lg-sliderBox {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 2px 8px 6px;
+    flex: none;
+}
+.dsh-lg-sliderHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--dsw-alias-label-secondary);
+    font-size: 11px;
+    line-height: 16px;
+}
+.dsh-lg-sliderHead strong {
+    color: var(--dsh-lg-accent, var(--dsw-alias-label-primary));
+    font-weight: 600;
+    transition: color 320ms ease;
+}
+/* DSH 0.1.2+ paints every border-radius through corner-shape: superellipse(1.5);
+   the rail, fill and knob opt back into real round shapes. */
+.dsh-lg-rail {
+    position: relative;
+    height: 30px;
+    margin: 10px 0 8px;
+}
+.dsh-lg-plate {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: 15px;
+    corner-shape: round;
+    background: rgb(0 0 0 / 7%);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 18%), inset 0 -1px 0 rgb(255 255 255 / 28%);
+    pointer-events: none;
+}
+body[data-ds-dark-theme] .dsh-lg-plate {
+    background: rgb(255 255 255 / 8%);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 55%), inset 0 -1px 0 rgb(255 255 255 / 6%);
+}
+.dsh-lg-windings {
+    position: absolute;
+    inset: 6px 14px;
+    border-radius: 9px;
+    background-image: repeating-linear-gradient(90deg, rgb(255 255 255 / 20%) 0 1px, transparent 1px 6px);
+    opacity: .75;
+    pointer-events: none;
+}
+.dsh-lg-fill {
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    overflow: hidden;
+    border-radius: 15px;
+    corner-shape: round;
+    background: linear-gradient(90deg, var(--dsh-lg-fillFrom, #4c8dff), var(--dsh-lg-accent, #7b6cff));
+    transition: width .28s cubic-bezier(.2, .9, .25, 1), background 320ms ease;
+}
+/* While the pointer is down the thumb must track 1:1 — any transition would lag
+   behind the cursor and make the stepless drag feel rubbery. The transition is
+   back on the moment the pointer lifts, which is what makes the snap visible. */
+.dsh-lg-rail[data-dragging="1"] .dsh-lg-fill { transition: background 320ms ease; }
+.dsh-lg-rail[data-dragging="1"] .dsh-lg-knob { transition: none; }
+.dsh-lg-rail[data-previewing="1"] .dsh-lg-knobCap { box-shadow: 0 2px 10px rgb(0 0 0 / 30%), inset 0 1px 0 #fff, 0 0 0 2px var(--dsh-lg-accent-soft, rgb(0 0 0 / 8%)); }
+.dsh-lg-fill::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgb(255 255 255 / 34%), transparent 46%, rgb(0 0 0 / 16%));
+}
+.dsh-lg-knob {
+    position: absolute;
+    z-index: 4;
+    top: 50%;
+    width: 32px;
+    height: 32px;
+    margin-left: -16px;
+    transform: translateY(-50%);
+    transition: left .28s cubic-bezier(.2, .9, .25, 1);
+    pointer-events: none;
+}
+.dsh-lg-knobCap {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    corner-shape: round;
+    background: radial-gradient(120% 120% at 32% 26%, #fff, #e9ecf3 46%, #c6cad6 100%);
+    box-shadow: 0 2px 6px rgb(0 0 0 / 26%), inset 0 1px 0 #fff;
+}
+.dsh-lg-knobCap::after {
+    content: "";
+    position: absolute;
+    inset: 41% 24%;
+    border-radius: 50%;
+    corner-shape: round;
+    background: var(--dsh-lg-accent, #4c8dff);
+    box-shadow: 0 0 6px var(--dsh-lg-accent, #4c8dff);
+    transition: background 320ms ease;
+}
+.dsh-lg-ticks {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    right: 17px;
+    bottom: 0;
+    left: 17px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    pointer-events: none;
+}
+.dsh-lg-tick {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    corner-shape: round;
+    background: rgb(0 0 0 / 22%);
+}
+.dsh-lg-tick[data-on="1"] { background: rgb(255 255 255 / 76%); }
+/* The depth the session is actually committed to, marked so a previewing thumb
+   never hides where it will land. */
+.dsh-lg-tick[data-current="1"] {
+    width: 6px;
+    height: 6px;
+    background: rgb(255 255 255 / 96%);
+    box-shadow: 0 0 0 2px rgb(255 255 255 / 32%);
+}
+body[data-ds-dark-theme] .dsh-lg-tick { background: rgb(255 255 255 / 26%); }
+body[data-ds-dark-theme] .dsh-lg-tick[data-on="1"] { background: rgb(255 255 255 / 84%); }
+body[data-ds-dark-theme] .dsh-lg-tick[data-current="1"] { background: rgb(255 255 255 / 98%); }
+.dsh-lg-input {
+    position: absolute;
+    z-index: 3;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 40px;
+    margin: 0;
+    transform: translateY(-50%);
+    background: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+    outline: none;
+    color: transparent;
+}
+.dsh-lg-input:disabled { opacity: .55; cursor: wait; }
+.dsh-lg-input::-webkit-slider-runnable-track {
+    height: 30px;
+    border: none;
+    border-radius: 15px;
+    background: transparent;
+}
+.dsh-lg-input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    box-sizing: border-box;
+    width: 32px;
+    height: 32px;
+    margin-top: -1px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: none;
+    cursor: pointer;
+}
+.dsh-lg-input::-moz-range-track {
+    height: 30px;
+    border: none;
+    border-radius: 15px;
+    background: transparent;
+}
+.dsh-lg-input::-moz-range-thumb {
+    box-sizing: border-box;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: none;
+    cursor: pointer;
+}
+.dsh-lg-desc {
+    margin: 2px 0 0;
+    color: var(--dsw-alias-label-caption);
+    font-size: 11px;
+    line-height: 15px;
+}
+.dsh-lg-error {
+    margin: 2px 0 0;
+    padding: 4px 6px;
+    border-radius: var(--dsw-radius-sm, 6px);
+    background: var(--dsw-alias-interactive-bg-hover-danger);
+    color: var(--dsw-alias-state-error-primary);
+    font-size: 11px;
+    line-height: 15px;
+}
+
+/* ── switches (settings card) ─────────────────────────────────────────── */
+.dsh-lg-switch {
+    position: relative;
+    flex: none;
+    width: 29px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: var(--dsw-alias-interactive-bg-hover);
+    cursor: pointer;
+    transition: background 160ms ease;
+}
+.dsh-lg-switch[data-on="1"] { background: var(--dsh-lg-accent, var(--dsw-alias-button-primary-fill)); }
+.dsh-lg-switchKnob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    corner-shape: round;
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 30%);
+    transition: transform 160ms ease;
+}
+.dsh-lg-switch[data-on="1"] .dsh-lg-switchKnob { transform: translateX(13px); }
+.dsh-lg-switch:disabled { opacity: .45; cursor: default; }
+
+/* ── settings card (设置 → 插件 → 插件配置) ───────────────────────────── */
+.dsh-lg-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    border-radius: 12px;
+    background: var(--dsw-alias-bg-layer-1);
+    color: var(--dsw-alias-label-primary);
+    list-style: none;
+}
+.dsh-lg-cardHead {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.dsh-lg-cardTitle {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+}
+.dsh-lg-cardDesc {
+    color: var(--dsw-alias-label-tertiary);
+    font-size: 12px;
+    line-height: 18px;
+}
+.dsh-lg-cardRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 8px;
+    border-top: 1px solid var(--dsw-alias-border-l1);
+}
+.dsh-lg-cardRowText {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.dsh-lg-cardRowLabel {
+    font-size: 13px;
+    line-height: 20px;
+}
+.dsh-lg-cardRowHint {
+    color: var(--dsw-alias-label-caption);
+    font-size: 11px;
+    line-height: 16px;
+}
+.dsh-lg-cardNote {
+    color: var(--dsw-alias-label-caption);
+    font-size: 11px;
+    line-height: 16px;
+}
+</style>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; padding: 26px 28px 40px; background: #eef0f3; color: #17181a;
+       font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
+h1 { margin: 0 0 4px; font-size: 19px; }
+p.lede { margin: 0 0 20px; color: #5e625e; font-size: 12.5px; line-height: 19px; }
+h2 { margin: 24px 0 10px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #6a6f6a; }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.sample { position: relative; margin: 0; height: 240px; overflow: hidden; border-radius: 14px;
+          corner-shape: round; isolation: isolate; box-shadow: 0 10px 28px rgb(0 0 0 / 16%); }
+.frame { position: relative; z-index: 1; display: grid; grid-template-columns: 88px 1fr; height: 100%; }
+.sidebar { display: flex; flex-direction: column; gap: 8px; padding: 14px 10px;
+           background: var(--dsw-specific-sidebar-fill); border-right: 1px solid var(--dsw-alias-border-l1); }
+.sidebar span { height: 7px; border-radius: 4px; background: var(--dsw-alias-label-secondary); opacity: .45; }
+.sidebar span:nth-child(1) { width: 82%; } .sidebar span:nth-child(2) { width: 58%; }
+.sidebar span:nth-child(3) { width: 72%; } .sidebar span:nth-child(4) { width: 44%; }
+.center { display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; padding: 14px; min-width: 0; }
+.bubble { align-self: flex-start; max-width: 82%; padding: 7px 10px; border-radius: 10px;
+          background: var(--dsw-specific-bubble); font-size: 12px; line-height: 18px; }
+.composer { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 7px 7px 7px 11px; border-radius: 13px; border: 1px solid var(--dsw-alias-border-l1);
+            background: var(--dsw-specific-input-major); }
+.placeholder { color: var(--dsw-alias-label-caption); font-size: 12px; white-space: nowrap; }
+figcaption { position: absolute; z-index: 2; left: 10px; top: 9px; padding: 2px 8px; border-radius: 999px;
+             background: rgb(0 0 0 / 45%); color: #fff; font-size: 10.5px; letter-spacing: .04em; }
+.panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
+/* The shipped layer sizes itself in vw; inside a thumbnail card use a share of
+   the card instead so the composition reads like the real page. */
+.sample .dsh-lg-portrait { width: 56% !important; }
+.panelDemo { padding: 14px; border-radius: 14px; background: var(--dsh-lg-panel);
+             box-shadow: 0 10px 28px rgb(0 0 0 / 12%); }
+.panelDemo .dsh-lg-panel { width: 100%; animation: none; box-shadow: none; }
+.settingsDemo { padding: 16px; border-radius: 14px; background: var(--dsw-alias-bg-layer-2); }
+.settingsDemo .settingsList { max-width: 560px; }
+.settingsDemo .dsh-lg-switch { transform: scale(1.15); transform-origin: right center; }
+.settingsDemo[style*="--dsw-alias-label-primary:#f4f1e8"] { background: #17181c; }
+</style></head>
+<body>
+<h1>dsh-lianggod-switcher · 离线预览</h1>
+<p class="lede">全部颜色由真实客户端 bundle 生成：背景自定义属性来自 presenter 的实际写入，表面/主色来自其 token 覆盖层。前两行为「浅色 / 深色 × 三档深度」的整页观感，第三行为换档面板与变阻器本体，最后一行为 设置 → 插件 → 插件配置 里的设置卡片。</p>
+<h2>浅色 · 0 / 15 / 30</h2>
+<div class="grid">
+  <figure class="sample" style="--dsh-lg-base:rgb(240 245 253 / 1);--dsh-lg-g1:rgb(126 176 255 / 0.34);--dsh-lg-g2:rgb(170 150 255 / 0.28);--dsh-lg-p1:16.0%;--dsh-lg-p2:10.0%;--dsh-lg-p3:84.0%;--dsh-lg-p4:80.0%;--dsh-lg-accent:rgb(62 110 214);--dsh-lg-accent-soft:rgb(62 110 214 / 0.15);--dsh-lg-fillFrom:rgb(91 140 232);--dsh-lg-flare:rgb(62 110 214 / 0.3);--dsh-lg-panel:rgb(245 248 254);--dsh-lg-portrait-opacity:0.4;--dsh-lg-portrait-width:42.0vw;--dsh-lg-canvas:#f7f8fa;--dsw-alias-bg-base:transparent;--dsw-alias-bg-layer-1:rgb(234 242 255 / 0.66);--dsw-alias-bg-layer-2:rgb(241 246 255 / 0.78);--dsw-alias-bg-layer-3:rgb(246 249 255 / 0.9);--dsw-specific-sidebar-fill:rgb(237 244 255 / 0.54);--dsw-specific-input-major:rgb(242 247 255 / 0.9);--dsw-specific-bubble:rgb(240 246 255 / 0.86);--dsw-specific-menu:rgb(245 249 255 / 0.98);--dsw-alias-brand-primary:rgb(62 110 214);--dsw-alias-button-primary-fill:rgb(62 110 214);--dsw-alias-button-primary-hover:rgb(93 133 221);--dsw-alias-state-business-primary:rgb(62 110 214);--dsw-alias-label-primary:#17181a;--dsw-alias-label-secondary:#5e625e;--dsw-alias-label-tertiary:#8b8f8a;--dsw-alias-label-caption:#8b8f8a;--dsw-alias-border-l1:rgb(0 0 0 / 10%);--dsw-alias-border-l2:rgb(0 0 0 / 12%);--dsw-alias-border-inverted:rgb(0 0 0 / 8%);--dsw-alias-bg-layer-1:#ffffff;--dsw-alias-bg-layer-2:#f6f7f9;--dsw-alias-interactive-bg-hover:rgb(0 0 0 / 5%);--dsw-alias-state-info-primary:#2f6fe4;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <div class="dsh-lg-backdrop" data-on="1" style="position:absolute;inset:0;z-index:0">
+      <div class="dsh-lg-aurora"></div>
+      <div class="dsh-lg-portrait"><img data-active="1" src="assets/portrait/stage-00.webp" alt=""></div>
+    </div>
+    <div class="frame">
+      <div class="sidebar"><span></span><span></span><span></span><span></span></div>
+      <div class="center">
+        <div class="bubble">推理深度 0，背景与人物跟着换。</div>
+        <div class="composer">
+          <span class="placeholder">给 DeepSeek 发消息…</span>
+          <div class="dsh-lg-root">
+            <button class="dsh-lg-trigger" type="button">
+              <svg class="dsh-lg-glyph" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.75 4.25h1.1a1.05 1.05 0 0 1 1.95 0h1.6a1.05 1.05 0 0 1 1.95 0h1.55a1.05 1.05 0 0 1 1.95 0h1.1v5.5h-1.1a1.05 1.05 0 0 1-1.95 0h-1.55a1.05 1.05 0 0 1-1.95 0h-1.6a1.05 1.05 0 0 1-1.95 0h-1.1v-5.5Z" fill="currentColor" opacity=".85"/></svg>
+              <span class="dsh-lg-label">DeepSeek V4</span>
+              <span class="dsh-lg-rank">小难梁</span>
+              <svg class="dsh-lg-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382C5.55843 8.90706C5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732C6.59876 8.24849C6.74023 8.3623C6.87291 8.46904C6.92272 8.47813C6.9375 8.48047C6.97895 8.48703C7.02105 8.48703C7.0625 8.48047C7.07728 8.47813C7.12709 8.46904C7.25977 8.3623C7.40124 8.24849C7.57405 8.07732C7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>light · 0 · 小难梁 · stage-00.webp</figcaption>
+  </figure>
+  <figure class="sample" style="--dsh-lg-base:rgb(241 237 250 / 1);--dsh-lg-g1:rgb(163 125 230 / 0.45);--dsh-lg-g2:rgb(173 108 234 / 0.41);--dsh-lg-p1:23.0%;--dsh-lg-p2:7.0%;--dsh-lg-p3:75.0%;--dsh-lg-p4:86.0%;--dsh-lg-accent:rgb(132 73 173);--dsh-lg-accent-soft:rgb(132 73 173 / 0.15);--dsh-lg-fillFrom:rgb(146 96 199);--dsh-lg-flare:rgb(132 73 173 / 0.3);--dsh-lg-panel:rgb(245 243 252);--dsh-lg-portrait-opacity:0.52;--dsh-lg-portrait-width:48.0vw;--dsh-lg-canvas:#f7f8fa;--dsw-alias-bg-base:transparent;--dsw-alias-bg-layer-1:rgb(240 234 251 / 0.66);--dsw-alias-bg-layer-2:rgb(245 241 252 / 0.78);--dsw-alias-bg-layer-3:rgb(249 246 253 / 0.9);--dsw-specific-sidebar-fill:rgb(242 237 252 / 0.54);--dsw-specific-input-major:rgb(246 242 253 / 0.9);--dsw-specific-bubble:rgb(244 239 252 / 0.86);--dsw-specific-menu:rgb(248 245 253 / 0.98);--dsw-alias-brand-primary:rgb(132 73 173);--dsw-alias-button-primary-fill:rgb(132 73 173);--dsw-alias-button-primary-hover:rgb(152 102 186);--dsw-alias-state-business-primary:rgb(132 73 173);--dsw-alias-label-primary:#17181a;--dsw-alias-label-secondary:#5e625e;--dsw-alias-label-tertiary:#8b8f8a;--dsw-alias-label-caption:#8b8f8a;--dsw-alias-border-l1:rgb(0 0 0 / 10%);--dsw-alias-border-l2:rgb(0 0 0 / 12%);--dsw-alias-border-inverted:rgb(0 0 0 / 8%);--dsw-alias-bg-layer-1:#ffffff;--dsw-alias-bg-layer-2:#f6f7f9;--dsw-alias-interactive-bg-hover:rgb(0 0 0 / 5%);--dsw-alias-state-info-primary:#2f6fe4;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <div class="dsh-lg-backdrop" data-on="1" style="position:absolute;inset:0;z-index:0">
+      <div class="dsh-lg-aurora"></div>
+      <div class="dsh-lg-portrait"><img data-active="1" src="assets/portrait/bridge-15.webp" alt=""></div>
+    </div>
+    <div class="frame">
+      <div class="sidebar"><span></span><span></span><span></span><span></span></div>
+      <div class="center">
+        <div class="bubble">推理深度 15，背景与人物跟着换。</div>
+        <div class="composer">
+          <span class="placeholder">给 DeepSeek 发消息…</span>
+          <div class="dsh-lg-root">
+            <button class="dsh-lg-trigger" type="button">
+              <svg class="dsh-lg-glyph" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.75 4.25h1.1a1.05 1.05 0 0 1 1.95 0h1.6a1.05 1.05 0 0 1 1.95 0h1.55a1.05 1.05 0 0 1 1.95 0h1.1v5.5h-1.1a1.05 1.05 0 0 1-1.95 0h-1.55a1.05 1.05 0 0 1-1.95 0h-1.6a1.05 1.05 0 0 1-1.95 0h-1.1v-5.5Z" fill="currentColor" opacity=".85"/></svg>
+              <span class="dsh-lg-label">DeepSeek V4</span>
+              <span class="dsh-lg-rank">梁圣</span>
+              <svg class="dsh-lg-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382C5.55843 8.90706C5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732C6.59876 8.24849C6.74023 8.3623C6.87291 8.46904C6.92272 8.47813C6.9375 8.48047C6.97895 8.48703C7.02105 8.48703C7.0625 8.48047C7.07728 8.47813C7.12709 8.46904C7.25977 8.3623C7.40124 8.24849C7.57405 8.07732C7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>light · 15 · 梁圣 · bridge-15.webp</figcaption>
+  </figure>
+  <figure class="sample" style="--dsh-lg-base:rgb(252 246 226 / 1);--dsh-lg-g1:rgb(246 196 74 / 0.56);--dsh-lg-g2:rgb(236 140 60 / 0.54);--dsh-lg-p1:30.0%;--dsh-lg-p2:4.0%;--dsh-lg-p3:66.0%;--dsh-lg-p4:92.0%;--dsh-lg-accent:rgb(172 120 16);--dsh-lg-accent-soft:rgb(172 120 16 / 0.15);--dsh-lg-fillFrom:rgb(205 154 42);--dsh-lg-flare:rgb(172 120 16 / 0.3);--dsh-lg-panel:rgb(253 249 235);--dsh-lg-portrait-opacity:0.64;--dsh-lg-portrait-width:54.0vw;--dsh-lg-canvas:#f7f8fa;--dsw-alias-bg-base:transparent;--dsw-alias-bg-layer-1:rgb(254 246 226 / 0.66);--dsw-alias-bg-layer-2:rgb(254 249 235 / 0.78);--dsw-alias-bg-layer-3:rgb(254 251 242 / 0.9);--dsw-specific-sidebar-fill:rgb(254 247 230 / 0.54);--dsw-specific-input-major:rgb(254 249 237 / 0.9);--dsw-specific-bubble:rgb(254 248 233 / 0.86);--dsw-specific-menu:rgb(254 250 241 / 0.98);--dsw-alias-brand-primary:rgb(172 120 16);--dsw-alias-button-primary-fill:rgb(172 120 16);--dsw-alias-button-primary-hover:rgb(185 142 54);--dsw-alias-state-business-primary:rgb(172 120 16);--dsw-alias-label-primary:#17181a;--dsw-alias-label-secondary:#5e625e;--dsw-alias-label-tertiary:#8b8f8a;--dsw-alias-label-caption:#8b8f8a;--dsw-alias-border-l1:rgb(0 0 0 / 10%);--dsw-alias-border-l2:rgb(0 0 0 / 12%);--dsw-alias-border-inverted:rgb(0 0 0 / 8%);--dsw-alias-bg-layer-1:#ffffff;--dsw-alias-bg-layer-2:#f6f7f9;--dsw-alias-interactive-bg-hover:rgb(0 0 0 / 5%);--dsw-alias-state-info-primary:#2f6fe4;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <div class="dsh-lg-backdrop" data-on="1" style="position:absolute;inset:0;z-index:0">
+      <div class="dsh-lg-aurora"></div>
+      <div class="dsh-lg-portrait"><img data-active="1" src="assets/portrait/stage-30.webp" alt=""></div>
+    </div>
+    <div class="frame">
+      <div class="sidebar"><span></span><span></span><span></span><span></span></div>
+      <div class="center">
+        <div class="bubble">推理深度 30，背景与人物跟着换。</div>
+        <div class="composer">
+          <span class="placeholder">给 DeepSeek 发消息…</span>
+          <div class="dsh-lg-root">
+            <button class="dsh-lg-trigger" type="button">
+              <svg class="dsh-lg-glyph" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.75 4.25h1.1a1.05 1.05 0 0 1 1.95 0h1.6a1.05 1.05 0 0 1 1.95 0h1.55a1.05 1.05 0 0 1 1.95 0h1.1v5.5h-1.1a1.05 1.05 0 0 1-1.95 0h-1.55a1.05 1.05 0 0 1-1.95 0h-1.6a1.05 1.05 0 0 1-1.95 0h-1.1v-5.5Z" fill="currentColor" opacity=".85"/></svg>
+              <span class="dsh-lg-label">DeepSeek V4</span>
+              <span class="dsh-lg-rank">梁祖</span>
+              <svg class="dsh-lg-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382C5.55843 8.90706C5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732C6.59876 8.24849C6.74023 8.3623C6.87291 8.46904C6.92272 8.47813C6.9375 8.48047C6.97895 8.48703C7.02105 8.48703C7.0625 8.48047C7.07728 8.47813C7.12709 8.46904C7.25977 8.3623C7.40124 8.24849C7.57405 8.07732C7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>light · 30 · 梁祖 · stage-30.webp</figcaption>
+  </figure></div>
+<h2>深色 · 0 / 15 / 30</h2>
+<div class="grid">
+  <figure class="sample" style="--dsh-lg-base:rgb(8 11 18 / 0.98);--dsh-lg-g1:rgb(40 78 150 / 0.5);--dsh-lg-g2:rgb(70 56 140 / 0.44);--dsh-lg-p1:16.0%;--dsh-lg-p2:10.0%;--dsh-lg-p3:84.0%;--dsh-lg-p4:80.0%;--dsh-lg-accent:rgb(128 168 255);--dsh-lg-accent-soft:rgb(128 168 255 / 0.26);--dsh-lg-fillFrom:rgb(88 128 208);--dsh-lg-flare:rgb(128 168 255 / 0.3);--dsh-lg-panel:rgb(11 14 21);--dsh-lg-portrait-opacity:0.5;--dsh-lg-portrait-width:42.0vw;--dsh-lg-canvas:#101318;--dsw-alias-bg-base:transparent;--dsw-alias-bg-layer-1:rgb(16 23 40 / 0.62);--dsw-alias-bg-layer-2:rgb(14 20 33 / 0.74);--dsw-alias-bg-layer-3:rgb(13 18 28 / 0.86);--dsw-specific-sidebar-fill:rgb(15 22 37 / 0.5);--dsw-specific-input-major:rgb(14 20 32 / 0.86);--dsw-specific-bubble:rgb(14 21 35 / 0.82);--dsw-specific-menu:rgb(13 18 29 / 0.96);--dsw-alias-brand-primary:rgb(128 168 255);--dsw-alias-button-primary-fill:rgb(128 168 255);--dsw-alias-button-primary-hover:rgb(109 143 217);--dsw-alias-state-business-primary:rgb(128 168 255);--dsw-alias-label-primary:#f4f1e8;--dsw-alias-label-secondary:#b8b4a9;--dsw-alias-label-tertiary:#8d8a80;--dsw-alias-label-caption:#8d8a80;--dsw-alias-border-l1:rgb(255 255 255 / 12%);--dsw-alias-border-l2:rgb(255 255 255 / 16%);--dsw-alias-border-inverted:rgb(255 255 255 / 16%);--dsw-alias-bg-layer-1:#22232a;--dsw-alias-bg-layer-2:#1b1c22;--dsw-alias-interactive-bg-hover:rgb(255 255 255 / 8%);--dsw-alias-state-info-primary:#8fb8ff;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <div class="dsh-lg-backdrop" data-on="1" style="position:absolute;inset:0;z-index:0">
+      <div class="dsh-lg-aurora"></div>
+      <div class="dsh-lg-portrait"><img data-active="1" src="assets/portrait/stage-00.webp" alt=""></div>
+    </div>
+    <div class="frame">
+      <div class="sidebar"><span></span><span></span><span></span><span></span></div>
+      <div class="center">
+        <div class="bubble">推理深度 0，背景与人物跟着换。</div>
+        <div class="composer">
+          <span class="placeholder">给 DeepSeek 发消息…</span>
+          <div class="dsh-lg-root">
+            <button class="dsh-lg-trigger" type="button">
+              <svg class="dsh-lg-glyph" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.75 4.25h1.1a1.05 1.05 0 0 1 1.95 0h1.6a1.05 1.05 0 0 1 1.95 0h1.55a1.05 1.05 0 0 1 1.95 0h1.1v5.5h-1.1a1.05 1.05 0 0 1-1.95 0h-1.55a1.05 1.05 0 0 1-1.95 0h-1.6a1.05 1.05 0 0 1-1.95 0h-1.1v-5.5Z" fill="currentColor" opacity=".85"/></svg>
+              <span class="dsh-lg-label">DeepSeek V4</span>
+              <span class="dsh-lg-rank">小难梁</span>
+              <svg class="dsh-lg-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382C5.55843 8.90706C5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732C6.59876 8.24849C6.74023 8.3623C6.87291 8.46904C6.92272 8.47813C6.9375 8.48047C6.97895 8.48703C7.02105 8.48703C7.0625 8.48047C7.07728 8.47813C7.12709 8.46904C7.25977 8.3623C7.40124 8.24849C7.57405 8.07732C7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>dark · 0 · 小难梁 · stage-00.webp</figcaption>
+  </figure>
+  <figure class="sample" style="--dsh-lg-base:rgb(12 9 19 / 0.98);--dsh-lg-g1:rgb(101 55 142 / 0.61);--dsh-lg-g2:rgb(117 55 162 / 0.57);--dsh-lg-p1:23.0%;--dsh-lg-p2:7.0%;--dsh-lg-p3:75.0%;--dsh-lg-p4:86.0%;--dsh-lg-accent:rgb(199 135 226);--dsh-lg-accent-soft:rgb(199 135 226 / 0.26);--dsh-lg-fillFrom:rgb(155 99 188);--dsh-lg-flare:rgb(199 135 226 / 0.3);--dsh-lg-panel:rgb(14 13 21);--dsh-lg-portrait-opacity:0.63;--dsh-lg-portrait-width:48.0vw;--dsh-lg-canvas:#101318;--dsw-alias-bg-base:transparent;--dsw-alias-bg-layer-1:rgb(25 20 39 / 0.62);--dsw-alias-bg-layer-2:rgb(21 18 33 / 0.74);--dsw-alias-bg-layer-3:rgb(17 16 28 / 0.86);--dsw-specific-sidebar-fill:rgb(24 19 36 / 0.5);--dsw-specific-input-major:rgb(20 17 31 / 0.86);--dsw-specific-bubble:rgb(22 18 34 / 0.82);--dsw-specific-menu:rgb(18 16 29 / 0.96);--dsw-alias-brand-primary:rgb(199 135 226);--dsw-alias-button-primary-fill:rgb(199 135 226);--dsw-alias-button-primary-hover:rgb(169 115 193);--dsw-alias-state-business-primary:rgb(199 135 226);--dsw-alias-label-primary:#f4f1e8;--dsw-alias-label-secondary:#b8b4a9;--dsw-alias-label-tertiary:#8d8a80;--dsw-alias-label-caption:#8d8a80;--dsw-alias-border-l1:rgb(255 255 255 / 12%);--dsw-alias-border-l2:rgb(255 255 255 / 16%);--dsw-alias-border-inverted:rgb(255 255 255 / 16%);--dsw-alias-bg-layer-1:#22232a;--dsw-alias-bg-layer-2:#1b1c22;--dsw-alias-interactive-bg-hover:rgb(255 255 255 / 8%);--dsw-alias-state-info-primary:#8fb8ff;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <div class="dsh-lg-backdrop" data-on="1" style="position:absolute;inset:0;z-index:0">
+      <div class="dsh-lg-aurora"></div>
+      <div class="dsh-lg-portrait"><img data-active="1" src="assets/portrait/bridge-15.webp" alt=""></div>
+    </div>
+    <div class="frame">
+      <div class="sidebar"><span></span><span></span><span></span><span></span></div>
+      <div class="center">
+        <div class="bubble">推理深度 15，背景与人物跟着换。</div>
+        <div class="composer">
+          <span class="placeholder">给 DeepSeek 发消息…</span>
+          <div class="dsh-lg-root">
+            <button class="dsh-lg-trigger" type="button">
+              <svg class="dsh-lg-glyph" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.75 4.25h1.1a1.05 1.05 0 0 1 1.95 0h1.6a1.05 1.05 0 0 1 1.95 0h1.55a1.05 1.05 0 0 1 1.95 0h1.1v5.5h-1.1a1.05 1.05 0 0 1-1.95 0h-1.55a1.05 1.05 0 0 1-1.95 0h-1.6a1.05 1.05 0 0 1-1.95 0h-1.1v-5.5Z" fill="currentColor" opacity=".85"/></svg>
+              <span class="dsh-lg-label">DeepSeek V4</span>
+              <span class="dsh-lg-rank">梁圣</span>
+              <svg class="dsh-lg-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382C5.55843 8.90706C5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732C6.59876 8.24849C6.74023 8.3623C6.87291 8.46904C6.92272 8.47813C6.9375 8.48047C6.97895 8.48703C7.02105 8.48703C7.0625 8.48047C7.07728 8.47813C7.12709 8.46904C7.25977 8.3623C7.40124 8.24849C7.57405 8.07732C7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>dark · 15 · 梁圣 · bridge-15.webp</figcaption>
+  </figure>
+  <figure class="sample" style="--dsh-lg-base:rgb(15 11 6 / 0.98);--dsh-lg-g1:rgb(176 132 40 / 0.72);--dsh-lg-g2:rgb(150 96 26 / 0.7);--dsh-lg-p1:30.0%;--dsh-lg-p2:4.0%;--dsh-lg-p3:66.0%;--dsh-lg-p4:92.0%;--dsh-lg-accent:rgb(255 208 110);--dsh-lg-accent-soft:rgb(255 208 110 / 0.26);--dsh-lg-fillFrom:rgb(219 174 79);--dsh-lg-flare:rgb(255 208 110 / 0.3);--dsh-lg-panel:rgb(16 14 12);--dsh-lg-portrait-opacity:0.76;--dsh-lg-portrait-width:54.0vw;--dsh-lg-canvas:#101318;--dsw-alias-bg-base:transparent;--dsw-alias-bg-layer-1:rgb(37 32 22 / 0.62);--dsw-alias-bg-layer-2:rgb(29 26 21 / 0.74);--dsw-alias-bg-layer-3:rgb(23 21 20 / 0.86);--dsw-specific-sidebar-fill:rgb(34 30 22 / 0.5);--dsw-specific-input-major:rgb(28 25 21 / 0.86);--dsw-specific-bubble:rgb(31 27 22 / 0.82);--dsw-specific-menu:rgb(24 23 21 / 0.96);--dsw-alias-brand-primary:rgb(255 208 110);--dsw-alias-button-primary-fill:rgb(255 208 110);--dsw-alias-button-primary-hover:rgb(216 177 95);--dsw-alias-state-business-primary:rgb(255 208 110);--dsw-alias-label-primary:#f4f1e8;--dsw-alias-label-secondary:#b8b4a9;--dsw-alias-label-tertiary:#8d8a80;--dsw-alias-label-caption:#8d8a80;--dsw-alias-border-l1:rgb(255 255 255 / 12%);--dsw-alias-border-l2:rgb(255 255 255 / 16%);--dsw-alias-border-inverted:rgb(255 255 255 / 16%);--dsw-alias-bg-layer-1:#22232a;--dsw-alias-bg-layer-2:#1b1c22;--dsw-alias-interactive-bg-hover:rgb(255 255 255 / 8%);--dsw-alias-state-info-primary:#8fb8ff;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <div class="dsh-lg-backdrop" data-on="1" style="position:absolute;inset:0;z-index:0">
+      <div class="dsh-lg-aurora"></div>
+      <div class="dsh-lg-portrait"><img data-active="1" src="assets/portrait/stage-30.webp" alt=""></div>
+    </div>
+    <div class="frame">
+      <div class="sidebar"><span></span><span></span><span></span><span></span></div>
+      <div class="center">
+        <div class="bubble">推理深度 30，背景与人物跟着换。</div>
+        <div class="composer">
+          <span class="placeholder">给 DeepSeek 发消息…</span>
+          <div class="dsh-lg-root">
+            <button class="dsh-lg-trigger" type="button">
+              <svg class="dsh-lg-glyph" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.75 4.25h1.1a1.05 1.05 0 0 1 1.95 0h1.6a1.05 1.05 0 0 1 1.95 0h1.55a1.05 1.05 0 0 1 1.95 0h1.1v5.5h-1.1a1.05 1.05 0 0 1-1.95 0h-1.55a1.05 1.05 0 0 1-1.95 0h-1.6a1.05 1.05 0 0 1-1.95 0h-1.1v-5.5Z" fill="currentColor" opacity=".85"/></svg>
+              <span class="dsh-lg-label">DeepSeek V4</span>
+              <span class="dsh-lg-rank">梁祖</span>
+              <svg class="dsh-lg-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382C5.55843 8.90706C5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732C6.59876 8.24849C6.74023 8.3623C6.87291 8.46904C6.92272 8.47813C6.9375 8.48047C6.97895 8.48703C7.02105 8.48703C7.0625 8.48047C7.07728 8.47813C7.12709 8.46904C7.25977 8.3623C7.40124 8.24849C7.57405 8.07732C7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>dark · 30 · 梁祖 · stage-30.webp</figcaption>
+  </figure></div>
+<h2>面板与变阻器</h2>
+<div class="panels">
+  <div class="panelDemo" style="--dsh-lg-base:rgb(241 237 250 / 1);--dsh-lg-g1:rgb(163 125 230 / 0.45);--dsh-lg-g2:rgb(173 108 234 / 0.41);--dsh-lg-p1:23.0%;--dsh-lg-p2:7.0%;--dsh-lg-p3:75.0%;--dsh-lg-p4:86.0%;--dsh-lg-accent:rgb(132 73 173);--dsh-lg-accent-soft:rgb(132 73 173 / 0.15);--dsh-lg-fillFrom:rgb(146 96 199);--dsh-lg-flare:rgb(132 73 173 / 0.3);--dsh-lg-panel:rgb(245 243 252);--dsh-lg-portrait-opacity:0.52;--dsh-lg-portrait-width:48.0vw;--dsh-lg-canvas:#f7f8fa;--dsw-alias-bg-base:transparent;--dsw-alias-bg-layer-1:rgb(240 234 251 / 0.66);--dsw-alias-bg-layer-2:rgb(245 241 252 / 0.78);--dsw-alias-bg-layer-3:rgb(249 246 253 / 0.9);--dsw-specific-sidebar-fill:rgb(242 237 252 / 0.54);--dsw-specific-input-major:rgb(246 242 253 / 0.9);--dsw-specific-bubble:rgb(244 239 252 / 0.86);--dsw-specific-menu:rgb(248 245 253 / 0.98);--dsw-alias-brand-primary:rgb(132 73 173);--dsw-alias-button-primary-fill:rgb(132 73 173);--dsw-alias-button-primary-hover:rgb(152 102 186);--dsw-alias-state-business-primary:rgb(132 73 173);--dsw-alias-label-primary:#17181a;--dsw-alias-label-secondary:#5e625e;--dsw-alias-label-tertiary:#8b8f8a;--dsw-alias-label-caption:#8b8f8a;--dsw-alias-border-l1:rgb(0 0 0 / 10%);--dsw-alias-border-l2:rgb(0 0 0 / 12%);--dsw-alias-border-inverted:rgb(0 0 0 / 8%);--dsw-alias-bg-layer-1:#ffffff;--dsw-alias-bg-layer-2:#f6f7f9;--dsw-alias-interactive-bg-hover:rgb(0 0 0 / 5%);--dsw-alias-state-info-primary:#2f6fe4;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <div class="dsh-lg-panel" style="position:static">
+      <button class="dsh-lg-row" type="button"><span class="dsh-lg-rowKey">模型</span><span class="dsh-lg-rowValue">DeepSeek V4</span><svg class="dsh-lg-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5.5 2.15137L5.92383 2.57617L8.65137 5.30273C8.90706 5.55843C9.13382 5.78438C9.29785 5.98828C9.46883 6.20088C9.61756 6.44405C9.66602 6.75C9.69222 6.91565C9.69222 7.08435C9.66602 7.25C9.61756 7.55595C9.46883 7.79912C9.29785 8.01172C9.13382 8.21561C8.90706 8.44157C8.65137 8.69727L5.92383 11.4238L5.5 11.8486L4.65137 11L5.07617 10.5762L7.80273 7.84863C8.07732 7.57405C8.24849 7.40124C8.3623 7.25977C8.46904 7.12709C8.47813 7.07728C8.48047 7.0625C8.48703 7.02105C8.48703 6.97895C8.48047 6.9375C8.47813 6.92272C8.46904 6.87291C8.3623 6.74023C8.24848 6.59876C8.07732 6.42595C7.80273 6.15137L5.07617 3.42383L4.65137 3L5.5 2.15137Z" fill="currentColor"/></svg></button>
+      <div class="dsh-lg-divider"></div>
+      <div class="dsh-lg-sliderBox">
+        <div class="dsh-lg-sliderHead"><span>推理深度</span><strong>梁子 · Medium</strong></div>
+        <div class="dsh-lg-rail" data-dragging="0" data-previewing="0">
+          <div class="dsh-lg-plate"></div>
+          <div class="dsh-lg-windings"></div>
+          <div class="dsh-lg-fill" style="width:50.0%"></div>
+          <div class="dsh-lg-knob" style="left:calc(50.0% + 0px)"><div class="dsh-lg-knobCap"></div></div>
+          <div class="dsh-lg-ticks"><span class="dsh-lg-tick" data-on="1" data-current="0"></span><span class="dsh-lg-tick" data-on="1" data-current="0"></span><span class="dsh-lg-tick" data-on="1" data-current="1"></span><span class="dsh-lg-tick" data-on="0" data-current="0"></span><span class="dsh-lg-tick" data-on="0" data-current="0"></span></div>
+        </div>
+        <p class="dsh-lg-desc">思考越长，背景越烫。</p>
+      </div>
+    </div>
+  </div>
+  <div class="panelDemo" style="--dsh-lg-base:rgb(12 9 19 / 0.98);--dsh-lg-g1:rgb(101 55 142 / 0.61);--dsh-lg-g2:rgb(117 55 162 / 0.57);--dsh-lg-p1:23.0%;--dsh-lg-p2:7.0%;--dsh-lg-p3:75.0%;--dsh-lg-p4:86.0%;--dsh-lg-accent:rgb(199 135 226);--dsh-lg-accent-soft:rgb(199 135 226 / 0.26);--dsh-lg-fillFrom:rgb(155 99 188);--dsh-lg-flare:rgb(199 135 226 / 0.3);--dsh-lg-panel:rgb(14 13 21);--dsh-lg-portrait-opacity:0.63;--dsh-lg-portrait-width:48.0vw;--dsh-lg-canvas:#101318;--dsw-alias-bg-base:transparent;--dsw-alias-bg-layer-1:rgb(25 20 39 / 0.62);--dsw-alias-bg-layer-2:rgb(21 18 33 / 0.74);--dsw-alias-bg-layer-3:rgb(17 16 28 / 0.86);--dsw-specific-sidebar-fill:rgb(24 19 36 / 0.5);--dsw-specific-input-major:rgb(20 17 31 / 0.86);--dsw-specific-bubble:rgb(22 18 34 / 0.82);--dsw-specific-menu:rgb(18 16 29 / 0.96);--dsw-alias-brand-primary:rgb(199 135 226);--dsw-alias-button-primary-fill:rgb(199 135 226);--dsw-alias-button-primary-hover:rgb(169 115 193);--dsw-alias-state-business-primary:rgb(199 135 226);--dsw-alias-label-primary:#f4f1e8;--dsw-alias-label-secondary:#b8b4a9;--dsw-alias-label-tertiary:#8d8a80;--dsw-alias-label-caption:#8d8a80;--dsw-alias-border-l1:rgb(255 255 255 / 12%);--dsw-alias-border-l2:rgb(255 255 255 / 16%);--dsw-alias-border-inverted:rgb(255 255 255 / 16%);--dsw-alias-bg-layer-1:#22232a;--dsw-alias-bg-layer-2:#1b1c22;--dsw-alias-interactive-bg-hover:rgb(255 255 255 / 8%);--dsw-alias-state-info-primary:#8fb8ff;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <div class="dsh-lg-panel" style="position:static">
+      <button class="dsh-lg-row" type="button"><span class="dsh-lg-rowKey">模型</span><span class="dsh-lg-rowValue">DeepSeek V4</span><svg class="dsh-lg-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5.5 2.15137L5.92383 2.57617L8.65137 5.30273C8.90706 5.55843C9.13382 5.78438C9.29785 5.98828C9.46883 6.20088C9.61756 6.44405C9.66602 6.75C9.69222 6.91565C9.69222 7.08435C9.66602 7.25C9.61756 7.55595C9.46883 7.79912C9.29785 8.01172C9.13382 8.21561C8.90706 8.44157C8.65137 8.69727L5.92383 11.4238L5.5 11.8486L4.65137 11L5.07617 10.5762L7.80273 7.84863C8.07732 7.57405C8.24849 7.40124C8.3623 7.25977C8.46904 7.12709C8.47813 7.07728C8.48047 7.0625C8.48703 7.02105C8.48703 6.97895C8.48047 6.9375C8.47813 6.92272C8.46904 6.87291C8.3623 6.74023C8.24848 6.59876C8.07732 6.42595C7.80273 6.15137L5.07617 3.42383L4.65137 3L5.5 2.15137Z" fill="currentColor"/></svg></button>
+      <div class="dsh-lg-divider"></div>
+      <div class="dsh-lg-sliderBox">
+        <div class="dsh-lg-sliderHead"><span>推理深度</span><strong>梁圣 · Medium</strong></div>
+        <div class="dsh-lg-rail" data-dragging="1" data-previewing="1">
+          <div class="dsh-lg-plate"></div>
+          <div class="dsh-lg-windings"></div>
+          <div class="dsh-lg-fill" style="width:62.0%"></div>
+          <div class="dsh-lg-knob" style="left:calc(62.0% + -4px)"><div class="dsh-lg-knobCap"></div></div>
+          <div class="dsh-lg-ticks"><span class="dsh-lg-tick" data-on="1" data-current="0"></span><span class="dsh-lg-tick" data-on="1" data-current="0"></span><span class="dsh-lg-tick" data-on="1" data-current="1"></span><span class="dsh-lg-tick" data-on="0" data-current="0"></span><span class="dsh-lg-tick" data-on="0" data-current="0"></span></div>
+        </div>
+        <p class="dsh-lg-desc">thorough</p>
+      </div>
+    </div>
+  </div>
+  <div class="panelDemo" style="--dsh-lg-base:rgb(252 246 226 / 1);--dsh-lg-g1:rgb(246 196 74 / 0.56);--dsh-lg-g2:rgb(236 140 60 / 0.54);--dsh-lg-p1:30.0%;--dsh-lg-p2:4.0%;--dsh-lg-p3:66.0%;--dsh-lg-p4:92.0%;--dsh-lg-accent:rgb(172 120 16);--dsh-lg-accent-soft:rgb(172 120 16 / 0.15);--dsh-lg-fillFrom:rgb(205 154 42);--dsh-lg-flare:rgb(172 120 16 / 0.3);--dsh-lg-panel:rgb(253 249 235);--dsh-lg-portrait-opacity:0.64;--dsh-lg-portrait-width:54.0vw;--dsh-lg-canvas:#f7f8fa;--dsw-alias-bg-base:transparent;--dsw-alias-bg-layer-1:rgb(254 246 226 / 0.66);--dsw-alias-bg-layer-2:rgb(254 249 235 / 0.78);--dsw-alias-bg-layer-3:rgb(254 251 242 / 0.9);--dsw-specific-sidebar-fill:rgb(254 247 230 / 0.54);--dsw-specific-input-major:rgb(254 249 237 / 0.9);--dsw-specific-bubble:rgb(254 248 233 / 0.86);--dsw-specific-menu:rgb(254 250 241 / 0.98);--dsw-alias-brand-primary:rgb(172 120 16);--dsw-alias-button-primary-fill:rgb(172 120 16);--dsw-alias-button-primary-hover:rgb(185 142 54);--dsw-alias-state-business-primary:rgb(172 120 16);--dsw-alias-label-primary:#17181a;--dsw-alias-label-secondary:#5e625e;--dsw-alias-label-tertiary:#8b8f8a;--dsw-alias-label-caption:#8b8f8a;--dsw-alias-border-l1:rgb(0 0 0 / 10%);--dsw-alias-border-l2:rgb(0 0 0 / 12%);--dsw-alias-border-inverted:rgb(0 0 0 / 8%);--dsw-alias-bg-layer-1:#ffffff;--dsw-alias-bg-layer-2:#f6f7f9;--dsw-alias-interactive-bg-hover:rgb(0 0 0 / 5%);--dsw-alias-state-info-primary:#2f6fe4;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <div class="dsh-lg-panel" style="position:static">
+      <button class="dsh-lg-row" type="button"><span class="dsh-lg-rowKey">模型</span><span class="dsh-lg-rowValue">DeepSeek V4</span><svg class="dsh-lg-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5.5 2.15137L5.92383 2.57617L8.65137 5.30273C8.90706 5.55843C9.13382 5.78438C9.29785 5.98828C9.46883 6.20088C9.61756 6.44405C9.66602 6.75C9.69222 6.91565C9.69222 7.08435C9.66602 7.25C9.61756 7.55595C9.46883 7.79912C9.29785 8.01172C9.13382 8.21561C8.90706 8.44157C8.65137 8.69727L5.92383 11.4238L5.5 11.8486L4.65137 11L5.07617 10.5762L7.80273 7.84863C8.07732 7.57405C8.24849 7.40124C8.3623 7.25977C8.46904 7.12709C8.47813 7.07728C8.48047 7.0625C8.48703 7.02105C8.48703 6.97895C8.48047 6.9375C8.47813 6.92272C8.46904 6.87291C8.3623 6.74023C8.24848 6.59876C8.07732 6.42595C7.80273 6.15137L5.07617 3.42383L4.65137 3L5.5 2.15137Z" fill="currentColor"/></svg></button>
+      <div class="dsh-lg-divider"></div>
+      <div class="dsh-lg-sliderBox">
+        <div class="dsh-lg-sliderHead"><span>推理深度</span><strong>梁祖 · High</strong></div>
+        <div class="dsh-lg-rail" data-dragging="0" data-previewing="0">
+          <div class="dsh-lg-plate"></div>
+          <div class="dsh-lg-windings"></div>
+          <div class="dsh-lg-fill" style="width:100.0%"></div>
+          <div class="dsh-lg-knob" style="left:calc(100.0% + -16px)"><div class="dsh-lg-knobCap"></div></div>
+          <div class="dsh-lg-ticks"><span class="dsh-lg-tick" data-on="1" data-current="0"></span><span class="dsh-lg-tick" data-on="1" data-current="0"></span><span class="dsh-lg-tick" data-on="1" data-current="1"></span><span class="dsh-lg-tick" data-on="1" data-current="0"></span><span class="dsh-lg-tick" data-on="1" data-current="0"></span></div>
+        </div>
+        <p class="dsh-lg-desc">思考越长，背景越烫。</p>
+      </div>
+    </div>
+  </div></div>
+<h2>设置 → 插件 → 插件配置</h2>
+<div class="panels">
+  <div class="settingsDemo" style="--dsw-alias-label-primary:#17181a;--dsw-alias-label-secondary:#5e625e;--dsw-alias-label-tertiary:#8b8f8a;--dsw-alias-label-caption:#8b8f8a;--dsw-alias-border-l1:rgb(0 0 0 / 10%);--dsw-alias-border-l2:rgb(0 0 0 / 12%);--dsw-alias-border-inverted:rgb(0 0 0 / 8%);--dsw-alias-bg-layer-1:#ffffff;--dsw-alias-bg-layer-2:#f6f7f9;--dsw-alias-interactive-bg-hover:rgb(0 0 0 / 5%);--dsw-alias-state-info-primary:#2f6fe4;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <ul class="settingsList">
+      <li class="dsh-lg-card">
+        <div class="dsh-lg-cardHead">
+          <span class="dsh-lg-cardTitle">梁神滑动变阻器</span>
+          <span class="dsh-lg-cardDesc">把输入区的模型入口换成推理深度滑动变阻器；下面三项各自决定换档时要不要改外观、以及改多久。</span>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">背景颜色</span>
+            <span class="dsh-lg-cardRowHint">换档时重染整页底色、发光、表面与主色按钮</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="1" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">背景人物</span>
+            <span class="dsh-lg-cardRowHint">换档时切换人物图；单独开启时人物浮在原生底色上</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="1" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">常驻显示</span>
+            <span class="dsh-lg-cardRowHint">关闭后只在拖动变阻器时出现，吸附后停留 0.75 秒即淡出，其余时间回到原生外观</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="1" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+      </li>
+    </ul>
+  </div>
+  <div class="settingsDemo" style="--dsw-alias-label-primary:#f4f1e8;--dsw-alias-label-secondary:#b8b4a9;--dsw-alias-label-tertiary:#8d8a80;--dsw-alias-label-caption:#8d8a80;--dsw-alias-border-l1:rgb(255 255 255 / 12%);--dsw-alias-border-l2:rgb(255 255 255 / 16%);--dsw-alias-border-inverted:rgb(255 255 255 / 16%);--dsw-alias-bg-layer-1:#22232a;--dsw-alias-bg-layer-2:#1b1c22;--dsw-alias-interactive-bg-hover:rgb(255 255 255 / 8%);--dsw-alias-state-info-primary:#8fb8ff;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <ul class="settingsList">
+      <li class="dsh-lg-card">
+        <div class="dsh-lg-cardHead">
+          <span class="dsh-lg-cardTitle">梁神滑动变阻器</span>
+          <span class="dsh-lg-cardDesc">把输入区的模型入口换成推理深度滑动变阻器；下面三项各自决定换档时要不要改外观、以及改多久。</span>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">背景颜色</span>
+            <span class="dsh-lg-cardRowHint">换档时重染整页底色、发光、表面与主色按钮</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="1" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">背景人物</span>
+            <span class="dsh-lg-cardRowHint">换档时切换人物图；单独开启时人物浮在原生底色上</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="1" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">常驻显示</span>
+            <span class="dsh-lg-cardRowHint">关闭后只在拖动变阻器时出现，吸附后停留 0.75 秒即淡出，其余时间回到原生外观</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="1" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+      </li>
+    </ul>
+  </div>
+  <div class="settingsDemo" style="--dsw-alias-label-primary:#17181a;--dsw-alias-label-secondary:#5e625e;--dsw-alias-label-tertiary:#8b8f8a;--dsw-alias-label-caption:#8b8f8a;--dsw-alias-border-l1:rgb(0 0 0 / 10%);--dsw-alias-border-l2:rgb(0 0 0 / 12%);--dsw-alias-border-inverted:rgb(0 0 0 / 8%);--dsw-alias-bg-layer-1:#ffffff;--dsw-alias-bg-layer-2:#f6f7f9;--dsw-alias-interactive-bg-hover:rgb(0 0 0 / 5%);--dsw-alias-state-info-primary:#2f6fe4;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <ul class="settingsList">
+      <li class="dsh-lg-card">
+        <div class="dsh-lg-cardHead">
+          <span class="dsh-lg-cardTitle">梁神滑动变阻器</span>
+          <span class="dsh-lg-cardDesc">把输入区的模型入口换成推理深度滑动变阻器；下面三项各自决定换档时要不要改外观、以及改多久。</span>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">背景颜色</span>
+            <span class="dsh-lg-cardRowHint">换档时重染整页底色、发光、表面与主色按钮</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="0" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">背景人物</span>
+            <span class="dsh-lg-cardRowHint">换档时切换人物图；单独开启时人物浮在原生底色上</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="1" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">常驻显示</span>
+            <span class="dsh-lg-cardRowHint">关闭后只在拖动变阻器时出现，吸附后停留 0.75 秒即淡出，其余时间回到原生外观</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="1" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+      </li>
+    </ul>
+  </div></div>
+<h2>常驻关闭时（只在拖动 / 吸附后 0.75s 出现）</h2>
+<div class="panels">
+  <div class="settingsDemo" style="--dsw-alias-label-primary:#17181a;--dsw-alias-label-secondary:#5e625e;--dsw-alias-label-tertiary:#8b8f8a;--dsw-alias-label-caption:#8b8f8a;--dsw-alias-border-l1:rgb(0 0 0 / 10%);--dsw-alias-border-l2:rgb(0 0 0 / 12%);--dsw-alias-border-inverted:rgb(0 0 0 / 8%);--dsw-alias-bg-layer-1:#ffffff;--dsw-alias-bg-layer-2:#f6f7f9;--dsw-alias-interactive-bg-hover:rgb(0 0 0 / 5%);--dsw-alias-state-info-primary:#2f6fe4;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <ul class="settingsList">
+      <li class="dsh-lg-card">
+        <div class="dsh-lg-cardHead">
+          <span class="dsh-lg-cardTitle">梁神滑动变阻器</span>
+          <span class="dsh-lg-cardDesc">把输入区的模型入口换成推理深度滑动变阻器；下面三项各自决定换档时要不要改外观、以及改多久。</span>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">背景颜色</span>
+            <span class="dsh-lg-cardRowHint">换档时重染整页底色、发光、表面与主色按钮</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="1" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">背景人物</span>
+            <span class="dsh-lg-cardRowHint">换档时切换人物图；单独开启时人物浮在原生底色上</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="1" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">常驻显示</span>
+            <span class="dsh-lg-cardRowHint">当前只在拖动变阻器时与吸附后 0.75 秒内出现，之后自动淡出</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="0" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+      </li>
+    </ul>
+  </div>
+  <div class="settingsDemo" style="--dsw-alias-label-primary:#f4f1e8;--dsw-alias-label-secondary:#b8b4a9;--dsw-alias-label-tertiary:#8d8a80;--dsw-alias-label-caption:#8d8a80;--dsw-alias-border-l1:rgb(255 255 255 / 12%);--dsw-alias-border-l2:rgb(255 255 255 / 16%);--dsw-alias-border-inverted:rgb(255 255 255 / 16%);--dsw-alias-bg-layer-1:#22232a;--dsw-alias-bg-layer-2:#1b1c22;--dsw-alias-interactive-bg-hover:rgb(255 255 255 / 8%);--dsw-alias-state-info-primary:#8fb8ff;--dsw-alias-button-primary-fill:#4c8dff;--dsw-shadow-lv3:0 8px 28px rgb(0 0 0 / 22%);--dsw-radius-sm:6px;--dsw-radius-lg:10px">
+    <ul class="settingsList">
+      <li class="dsh-lg-card">
+        <div class="dsh-lg-cardHead">
+          <span class="dsh-lg-cardTitle">梁神滑动变阻器</span>
+          <span class="dsh-lg-cardDesc">把输入区的模型入口换成推理深度滑动变阻器；下面三项各自决定换档时要不要改外观、以及改多久。</span>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">背景颜色</span>
+            <span class="dsh-lg-cardRowHint">换档时重染整页底色、发光、表面与主色按钮</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="1" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">背景人物</span>
+            <span class="dsh-lg-cardRowHint">换档时切换人物图；单独开启时人物浮在原生底色上</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="1" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+        
+        <div class="dsh-lg-cardRow">
+          <span class="dsh-lg-cardRowText">
+            <span class="dsh-lg-cardRowLabel">常驻显示</span>
+            <span class="dsh-lg-cardRowHint">当前只在拖动变阻器时与吸附后 0.75 秒内出现，之后自动淡出</span>
+          </span>
+          <button class="dsh-lg-switch" data-on="0" type="button"><span class="dsh-lg-switchKnob"></span></button>
+        </div>
+      </li>
+    </ul>
+  </div></div>
+</body></html>

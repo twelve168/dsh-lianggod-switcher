@@ -1,0 +1,24 @@
+# 依赖与构建产物（本插件零运行时依赖，这里只是通用保险）
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+dsh-*.tmp
+*.bak
+*.bak-*
+*.corrupt-*
+_*.mjs
+
+# 本地个人设置（插件运行时并不写仓库内任何文件，仅防误提交）
+settings.local.*
