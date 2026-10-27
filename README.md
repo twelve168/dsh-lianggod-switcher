@@ -1,8 +1,8 @@
 # dsh-lianggod-switcher · 梁神滑动变阻器
 
-把 DeepSeek Harness（DSH）Web 端输入区的模型选择器换成一台**无极滑动变阻器**：拖动时背景与人物连续跟手、按顺序走完全部外观；**只有松手才吸附**到最近的可用思考深度并提交给模型。背景配色、人物、以及「什么时候显示」都由 **设置 → 插件 → 插件配置** 里的三个开关控制。
+**中文** | [English](README.en.md)
 
-> An infinite (stepless) reasoning-depth slider for DeepSeek Harness: drag continuously to preview every background/portrait stage, release to snap onto the nearest available reasoning effort. Zero runtime dependencies — two plain JS files plus 24 WEBP anchors.
+把 DeepSeek Harness（DSH）Web 端输入区的模型选择器换成一台**无极滑动变阻器**：拖动时背景与人物连续跟手、按顺序走完全部外观；**只有松手才吸附**到最近的可用思考深度并提交给模型。背景配色、人物、以及「什么时候显示」都由 **设置 → 插件 → 插件配置** 里的三个开关控制。零运行时依赖——插件本体就是 `index.js` + `host.js` 两个文件和 24 张 WEBP 锚点图。
 
 ![浅色 / 深色 × 三档深度](docs/preview.png)
 
