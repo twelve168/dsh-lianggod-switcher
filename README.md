@@ -150,3 +150,9 @@ THIRD_PARTY_NOTICES.md  人像素材来源与授权说明
 ## License
 
 代码以 [MIT](LICENSE) 发布。人像素材除外，见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+
+---
+
+本文档大多由AI生成
+
+v1.0 261028
