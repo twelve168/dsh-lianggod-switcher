@@ -1,6 +1,6 @@
 {
   "name": "dsh-lianggod-switcher",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "梁神滑动变阻器：把 DSH 输入区的模型选择换成无极推理深度变阻器，换档时切换整页背景与人物。An infinite-slider reasoning-depth switcher for DeepSeek Harness with depth-driven background and portrait.",
   "type": "module",
   "main": "host.js",
