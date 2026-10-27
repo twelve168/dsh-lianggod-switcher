@@ -12,10 +12,17 @@ Zero runtime dependencies: the plugin is `index.js` + `host.js` plus 24 WEBP anc
 
 You do not have to install anything to see it: [`preview.html`](preview.html) in the repository root is a generated static preview (light/dark × three depths, the rheostat itself, the settings card) — just open it. It is regenerated from the real `index.js` by `npm run preview`, and the two screenshots above are its captures.
 
-Inspiration:
+## Adapted from
 
-- [lemonorangeapple/dsh-effort-switcher](https://github.com/lemonorangeapple/dsh-effort-switcher) — the reasoning-effort slider and the `conversation.input.model` seat takeover.
-- [kingOfSoySauce/dsh-liang-skin](https://github.com/kingOfSoySauce/dsh-liang-skin) — the depth-driven background/portrait feel, the 0–30 depth axis and the 小难梁 → 梁祖 rank names.
+This plugin was not written from scratch: it merges two community plugins and then changes them substantially. The portrait artwork is reused from the second one.
+
+- Adapted from **[lemonorangeapple/dsh-effort-switcher](https://github.com/lemonorangeapple/dsh-effort-switcher)** — taking over the `conversation.input.model` seat, and the "drag only previews, release commits `reasoningEffort`" interaction skeleton, come from it.
+  **What changed**: the **discrete step slider became a stepless 0–1000 knob** (the original moves one notch per effort); the rail, ceramic plate, windings and knob are redrawn as a rheostat; arrow keys now hop whole depths, plus Home/End and Esc-to-abandon and a "committed depth" marker; the switch that sat under the slider moved out of the popover into the settings page.
+
+- Adapted from **[kingOfSoySauce/dsh-liang-skin](https://github.com/kingOfSoySauce/dsh-liang-skin)** — the 0–30 depth axis, the six colour stops, the 小难梁 → 梁祖 rank names, the 24 portrait anchors and the whole "depth changes the backdrop" feel come from it (that skin in turn credits [Lichtspektrum/liang-intensity-calibrator](https://github.com/Lichtspektrum/liang-intensity-calibrator) for concept and artwork).
+  **What changed**: colour and portrait are now **two independent switches** (the original toggles the whole skin at once, through a button it grafts into the native `Settings → General → Appearance` row); a third **"always visible" switch** was added so the appearance can appear only while dragging and for 750ms after the snap; portrait swaps went from "jump to the nearest anchor with no transition" to an **overlapping cross-fade**; the palette went from "two stages, light and dark" to **continuous interpolation along the depth**; the backdrop is now a fixed `z-index:-1` layer under `body` plus alias-token overrides, with the artwork served by the plugin's own exact `webServer` routes instead of DOM grafted into the native appearance row.
+
+New in this plugin (neither original has it): the split between stepless dragging and snap-on-release, whole-depth keyboard navigation, the three switches registered as **host settings** in **Settings → Plugins → Plugin configuration** (persisted per profile), the orthogonality of colour / portrait / visibility, and the two headless self-checks plus the offline preview generator.
 
 ## Features
 

@@ -10,10 +10,17 @@
 
 想看完整效果不必先装：仓库根目录的 [`preview.html`](preview.html) 是离线生成的静态预览（浅色/深色 × 三档深度、变阻器本体、设置卡片），双击即可打开。它由 `npm run preview` 从真实 `index.js` 重新生成；上面两张图就是它的截图。
 
-灵感来源：
+## 改编自
 
-- [lemonorangeapple/dsh-effort-switcher](https://github.com/lemonorangeapple/dsh-effort-switcher) — 推理强度滑动条与 `conversation.input.model` 座位接管方式。
-- [kingOfSoySauce/dsh-liang-skin](https://github.com/kingOfSoySauce/dsh-liang-skin) — 深度换背景/人物的观感、0–30 深度轴与「小难梁 → 梁祖」档位命名。
+本插件不是从零写的：它把两个社区插件的思路合到一起再改造，人像素材也沿用其中之一。
+
+- 改编自 **[lemonorangeapple/dsh-effort-switcher](https://github.com/lemonorangeapple/dsh-effort-switcher)** —— 接管 `conversation.input.model` 模型座位、拖动只预览 / 松手才提交 `reasoningEffort` 的交互骨架来自它。
+  **改动**：把**离散档位滑块换成 0–1000 的无级旋钮**（原插件一个档位一格）；轨道、陶瓷底板、绕线纹与旋钮全部重绘为「变阻器」；补上方向键整档跳转 / Home-End / Esc 放弃，以及「已提交档位」白点标记；面板底部的开关移除，改到设置页统一管理。
+
+- 改编自 **[kingOfSoySauce/dsh-liang-skin](https://github.com/kingOfSoySauce/dsh-liang-skin)** —— 0–30 深度轴、六段色板、「小难梁 → 梁祖」档位命名、24 张人像锚点与「深度换背景」的整体观感来自它（该皮肤又注明素材源自 [Lichtspektrum/liang-intensity-calibrator](https://github.com/Lichtspektrum/liang-intensity-calibrator)）。
+  **改动**：「背景」与「人物」拆成**两个独立开关**（原皮肤是整套外观一起开关，开关本身是插进原生 `设置 → 通用设置 → 外观` 那一行的一格按钮）；新增第三个**「常驻显示」开关**，关掉后只在拖动时与吸附后 750ms 出现，其余时间完全回到原生外观；人物换图从「直接换成最近锚点、无过渡」改成**重叠交叉淡入**；配色从「只分浅/深两个阶段」改成**随深度连续插值**；背景层改为 `body` 之下 `z-index:-1` 的固定图层 + alias token 覆盖，素材由插件自己的 `webServer` 精确路由提供，不再往原生外观行里插入 DOM。
+
+两者都没有、本插件新增的部分：无极拖动与松手吸附的分离、键盘整档跳转、三个开关以 **Host settings** 形式注册进 **设置 → 插件 → 插件配置**（随 profile 持久化）、人物/配色/显隐彼此正交、以及两套无头自检与离线预览生成器。
 
 ## 功能
 
